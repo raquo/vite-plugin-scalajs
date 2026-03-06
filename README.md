@@ -70,6 +70,16 @@ export default defineConfig({
       // URI prefix of imports that this plugin catches (without the trailing ':')
       // default: 'scalajs' (so the plugin recognizes URIs starting with 'scalajs:')
       uriPrefix: 'scalajs',
+      
+      // This is how many times we will try to invoke sbt before giving up.
+      // Note: This applies only if sbt invocation fails for temporary reasons, i.e.:
+      //  1. If the sbt server was busy booting.
+      // default: 1 (no retries)
+      maxAttempts: 1,
+
+      // Delay between retries (if maxAttempts > 1)
+      // default: 1000 (1 second)
+      retryDelayMs: 1000
     }),
   ],
 });
