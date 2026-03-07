@@ -59,14 +59,19 @@ The plugin supports the following configuration options:
 export default defineConfig({
   plugins: [
     scalaJsSbtPlugin({
-      // path to the directory containing the sbt build
+      // Path to the directory containing the sbt build
       // default: '.'
       cwd: '.',
 
-      // sbt project ID from within the sbt build to get fast/fullLinkJS from
+      // Sbt project ID from within the sbt build to get fast/fullLinkJS from
       // default: the root project of the sbt build
       projectID: 'client',
 
+      // Custom sbt task to run. Must return the Scala.js output path,
+      // either as java.io.File, or as a String of its absolute path.
+      // default: either 'fastLinkJSOutput' or 'fullLinkJSOutput', depending on NODE_ENV.
+      task: 'fastLinkJSOutput',
+      
       // URI prefix of imports that this plugin catches (without the trailing ':')
       // default: 'scalajs' (so the plugin recognizes URIs starting with 'scalajs:')
       uriPrefix: 'scalajs',

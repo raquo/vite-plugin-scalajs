@@ -49,7 +49,7 @@ function printSbtTaskImpl(
         let errorMessage = `sbt invocation for Scala.js compilation failed with exit code ${code}.`;
         if (fullOutput.includes("Not a valid command: --")) {
           errorMessage += "\nCause: Your sbt launcher script version is too old (<1.3.3)."
-          errorMessage += "\nFix: Re-install the latest version of sbt launcher script from https://www.scala-sbt.org/"
+          errorMessage += "\nFix:   Re-install the latest version of sbt launcher script from https://www.scala-sbt.org/"
           reject(new Error(errorMessage));
         } else if (fullOutput.includes("sbt thinks that server is already booting")) {
           if (remainingAttempts > 0) {
@@ -86,6 +86,7 @@ function printWarning(message: String): void {
 export interface ScalaJSPluginOptions {
   cwd?: string,
   projectID?: string,
+  task?: string,
   uriPrefix?: string,
   maxAttempts?: number,
   retryDelayMs?: number,
@@ -117,11 +118,22 @@ export function scalaJsSbtPlugin(options: ScalaJSPluginOptions = {}): VitePlugin
     },
 
     // standard Rollup
-    async buildStart(options) {
-      if (isDev === undefined)
+    async buildStart(buildOptions) {
+      if (isDev === undefined) {
         throw new Error("configResolved must be called before buildStart");
+      }
 
-      const task = isDev ? "fastLinkJSOutput" : "fullLinkJSOutput";
+      const task = options.task?.trim() || (isDev ? "fastLinkJSOutput" : "fullLinkJSOutput");
+      if (["fastLinkJS", "fullLinkJS", "fastOptJS", "fullOptJS"].includes(task)) {
+        // Warn about known-bad tasks to help users out
+        let errorMessage = `scalaJsSbtPlugin: you provided a known unsupported task '${task}'.`;
+        errorMessage += "\nFix: Provide either 'fastLinkJSOutput' or 'fullLinkJSOutput'.";
+        errorMessage += "\n     One of those is probably what you want.";
+        errorMessage += "\n     By default, the plugin chooses between them depending on NODE_ENV.";
+        errorMessage += "\nOr:  Provide a custom task that returns the Scala.js output directory,";
+        errorMessage += "\n     either as a java.io.File, or as a String with its absolute path.";
+        throw new Error(errorMessage);
+      }
       const projectTask = projectID ? `${projectID}/${task}` : task;
       scalaJsOutputDir = await printSbtTask(projectTask, cwd, maxAttempts, retryDelayMs);
     },
@@ -163,13 +175,15 @@ export function resolveModuleId(
   scalaJsOutputDir: string | undefined,
   errorMessageIfNoOutputDir: string
 ): string | null {
-  if (scalaJsOutputDir === undefined)
+  if (scalaJsOutputDir === undefined) {
     throw new Error(errorMessageIfNoOutputDir);
+  }
 
   const fullUriPrefix = uriPrefix ? (uriPrefix + ':') : 'scalajs:';
 
-  if (!moduleId.startsWith(fullUriPrefix))
+  if (!moduleId.startsWith(fullUriPrefix)) {
     return null;
+  }
 
   const path = moduleId.substring(fullUriPrefix.length);
 
