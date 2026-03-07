@@ -91,16 +91,22 @@ export interface ScalaJSPluginOptions {
   retryDelayMs?: number,
 }
 
-export default function scalaJSPlugin(options: ScalaJSPluginOptions = {}): VitePlugin {
+export interface ScalaJSResolverPluginOptions {
+  scalaJsOutputDir: string,
+  uriPrefix?: string,
+}
+
+export default scalaJsSbtPlugin;
+
+// This version of the plugin calls sbt to find out `scalaJsOutputDir`.
+export function scalaJsSbtPlugin(options: ScalaJSPluginOptions = {}): VitePlugin {
   const { cwd, projectID, uriPrefix } = options;
 
   const maxAttempts = options.maxAttempts ?? 1; // @TODO default to 3 in a future version?
   const retryDelayMs = options.retryDelayMs ?? 1000;
 
-  const fullURIPrefix = uriPrefix ? (uriPrefix + ':') : 'scalajs:';
-
   let isDev: boolean | undefined = undefined;
-  let scalaJSOutputDir: string | undefined = undefined;
+  let scalaJsOutputDir: string | undefined = undefined;
 
   return {
     name: "scalajs:sbt-scalajs-plugin",
@@ -117,19 +123,55 @@ export default function scalaJSPlugin(options: ScalaJSPluginOptions = {}): ViteP
 
       const task = isDev ? "fastLinkJSOutput" : "fullLinkJSOutput";
       const projectTask = projectID ? `${projectID}/${task}` : task;
-      scalaJSOutputDir = await printSbtTask(projectTask, cwd, maxAttempts, retryDelayMs);
+      scalaJsOutputDir = await printSbtTask(projectTask, cwd, maxAttempts, retryDelayMs);
     },
 
     // standard Rollup
-    resolveId(source, importer, options) {
-      if (scalaJSOutputDir === undefined)
-        throw new Error("buildStart must be called before resolveId");
-
-      if (!source.startsWith(fullURIPrefix))
-        return null;
-      const path = source.substring(fullURIPrefix.length);
-
-      return `${scalaJSOutputDir}/${path}`;
+    resolveId(moduleId, importer, resolveOptions) {
+      return resolveModuleId(
+        moduleId,
+        uriPrefix,
+        scalaJsOutputDir,
+        "scalaJsSbtPlugin: buildStart must be called before resolveId"
+      );
     },
   };
+}
+
+// This version of the plugin does not call sbt, it only resolves the scala.js modules to a known `scalaJsOutputDir`.
+export function scalaJsResolverPlugin(options: ScalaJSResolverPluginOptions): VitePlugin {
+  return {
+    name: "scalajs:resolver-plugin",
+
+    // standard Rollup
+    resolveId(moduleId, importer, resolveOptions) {
+      return resolveModuleId(
+        moduleId,
+        options?.uriPrefix,
+        options?.scalaJsOutputDir,
+        "You must provide a `scalaJsOutputDir` option to scalaJsResolverPlugin (or use scalaJsSbtPlugin, which calls sbt to find it)."
+      );
+    },
+  };
+}
+
+// Returns null if the module id is not relevant to scala.js vite plugin.
+// Throws if scalaJsOutputDir is not defined.
+export function resolveModuleId(
+  moduleId: String,
+  uriPrefix: string | undefined,
+  scalaJsOutputDir: string | undefined,
+  errorMessageIfNoOutputDir: string
+): string | null {
+  if (scalaJsOutputDir === undefined)
+    throw new Error(errorMessageIfNoOutputDir);
+
+  const fullUriPrefix = uriPrefix ? (uriPrefix + ':') : 'scalajs:';
+
+  if (!moduleId.startsWith(fullUriPrefix))
+    return null;
+
+  const path = moduleId.substring(fullUriPrefix.length);
+
+  return `${scalaJsOutputDir}/${path}`;
 }

@@ -17,10 +17,10 @@ Tell Vite to use the plugin in `vite.config.js`:
 
 ```javascript
 import { defineConfig } from "vite";
-import scalaJSPlugin from "@scala-js/vite-plugin-scalajs";
+import scalaJsSbtPlugin from "@scala-js/vite-plugin-scalajs";
 
 export default defineConfig({
-  plugins: [scalaJSPlugin()],
+  plugins: [scalaJsSbtPlugin()],
 });
 ```
 
@@ -58,7 +58,7 @@ The plugin supports the following configuration options:
 ```javascript
 export default defineConfig({
   plugins: [
-    scalaJSPlugin({
+    scalaJsSbtPlugin({
       // path to the directory containing the sbt build
       // default: '.'
       cwd: '.',
@@ -83,6 +83,57 @@ export default defineConfig({
     }),
   ],
 });
+```
+
+## Resolver-only plugin
+
+We also offer a stripped down version of this vite plugin that does not call sbt. All it does is resolve module IDs with a `scalajs:` prefix to their full paths.
+
+You need to know the Scala.js output directory path to use this plugin (see `sbt show fastLinkJSOutput`). You don't want to hardcode this directory into your vite config, so this plugin is most suitable for custom sbt workflows, and integration with other Scala build tools.
+
+```javascript
+import { defineConfig } from "vite";
+import { scalaJsResolverPlugin } from "@scala-js/vite-plugin-scalajs";
+
+const scalaJsOutputDir = process.env.SCALAJS_OUTPUT_DIR;
+
+export default defineConfig({
+  plugins: [
+    scalaJsResolverPlugin({
+      // You MUST provide the directory where the scala.js output lives.
+      // default: none, will throw at build time if not provided. 
+      scalaJsOutputDir: scalaJsOutputDir,
+
+      // URI prefix of imports that this plugin catches (without the trailing ':')
+      // default: 'scalajs' (so the plugin recognizes URIs starting with 'scalajs:')
+      uriPrefix: "scalajs:"
+    })
+  ]
+})
+```
+
+You can also switch between the two plugins at build time. For example, inside your custom sbt task, you can run shell command `s"SCALAJS_OUTPUT_DIR=${fastLinkJsOutput.value} vite build"`, which would call into `scalaJsResolverPlugin` without booting another session of sbt, meanwhile you can use this same vite config to run `vite build` from the command line as usual:
+
+```javascript
+import { defineConfig } from "vite";
+import { scalaJsResolverPlugin, scalaJsSbtPlugin } from "@scala-js/vite-plugin-scalajs";
+
+const scalaJsOutputDir = process.env.SCALAJS_OUTPUT_DIR;
+
+const scalaJsPlugin = scalaJsOutputDir
+  ? scalaJsResolverPlugin({
+    scalaJsOutputDir: scalaJsOutputDir
+  })
+  : scalaJsSbtPlugin({
+    cwd: ".",
+    projectID: 'client',
+  }); 
+
+export default defineConfig({
+  plugins: [
+    scalaJsPlugin 
+  ]
+})
 ```
 
 ## Importing `@JSExportTopLevel` Scala.js members
