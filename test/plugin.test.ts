@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, TestOptions } from 'vitest';
 import scalaJSPlugin, { ScalaJSPluginOptions } from "../index";
 import type { PluginContext } from 'rollup';
-import type { Plugin as VitePlugin } from "vite";
+import { createLogger, type Logger, type Plugin as VitePlugin } from "vite";
 
 /* This interface refines the VitePlugin with some knowledge about our
  * particular implementation, for easier testing. If we define here something
@@ -9,7 +9,7 @@ import type { Plugin as VitePlugin } from "vite";
  * we do get some safety that we adhere to VitePlugin's API.
  */
 interface RefinedPlugin extends VitePlugin {
-  configResolved: (this: void, resolvedConfig: { mode: string }) => void | Promise<void>;
+  configResolved: (this: void, resolvedConfig: { mode: string, logger: Logger }) => void | Promise<void>;
   buildStart: (this: PluginContext, options: {}) => void | Promise<void>;
   resolveId: (this: PluginContext, source: string) => string | Promise<string>;
 }
@@ -20,6 +20,8 @@ function normalizeSlashes(path: string | null): string | null {
 
 const MODE_DEVELOPMENT = 'development';
 const MODE_PRODUCTION = 'production';
+
+const logger = createLogger();
 
 describe("scalaJSPlugin", () => {
   const cwd = process.cwd() + "/test/testproject";
@@ -49,7 +51,7 @@ describe("scalaJSPlugin", () => {
   it("works without a specific projectID (production)", testOptions, async () => {
     const [plugin, fakePluginContext] = setup({});
 
-    await plugin.configResolved.call(undefined, { mode: MODE_PRODUCTION });
+    await plugin.configResolved.call(undefined, { mode: MODE_PRODUCTION, logger: logger });
     await plugin.buildStart.call(fakePluginContext, {});
 
     expect(normalizeSlashes(await plugin.resolveId.call(fakePluginContext, 'scalajs:main.js')))
@@ -62,7 +64,7 @@ describe("scalaJSPlugin", () => {
   it("works without a specific projectID (development)", testOptions, async () => {
     const [plugin, fakePluginContext] = setup({});
 
-    await plugin.configResolved.call(undefined, { mode: MODE_DEVELOPMENT });
+    await plugin.configResolved.call(undefined, { mode: MODE_DEVELOPMENT, logger: logger });
     await plugin.buildStart.call(fakePluginContext, {});
 
     expect(normalizeSlashes(await plugin.resolveId.call(fakePluginContext, 'scalajs:main.js')))
@@ -77,7 +79,7 @@ describe("scalaJSPlugin", () => {
       projectID: "otherProject",
     });
 
-    await plugin.configResolved.call(undefined, { mode: MODE_PRODUCTION });
+    await plugin.configResolved.call(undefined, { mode: MODE_PRODUCTION, logger: logger });
     await plugin.buildStart.call(fakePluginContext, {});
 
     expect(normalizeSlashes(await plugin.resolveId.call(fakePluginContext, 'scalajs:main.js')))
@@ -92,7 +94,7 @@ describe("scalaJSPlugin", () => {
       uriPrefix: "customsjs",
     });
 
-    await plugin.configResolved.call(undefined, { mode: MODE_DEVELOPMENT });
+    await plugin.configResolved.call(undefined, { mode: MODE_DEVELOPMENT, logger: logger });
     await plugin.buildStart.call(fakePluginContext, {});
 
     expect(normalizeSlashes(await plugin.resolveId.call(fakePluginContext, 'customsjs:main.js')))
@@ -107,7 +109,7 @@ describe("scalaJSPlugin", () => {
       projectID: "invalidProject",
     });
 
-    await plugin.configResolved.call(undefined, { mode: MODE_PRODUCTION });
+    await plugin.configResolved.call(undefined, { mode: MODE_PRODUCTION, logger: logger });
 
     const buildStartResult = plugin.buildStart.call(fakePluginContext, {});
     await expect(buildStartResult).rejects.toThrowError('sbt invocation');

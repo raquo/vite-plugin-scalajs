@@ -1,15 +1,16 @@
 import { spawn, SpawnOptions } from "child_process";
-import type { Plugin as VitePlugin } from "vite";
+import type { Logger, Plugin as VitePlugin } from "vite";
 
 // Utility to invoke a given sbt task and fetch its output
 function printSbtTask(
   task: string,
   cwd: string | undefined,
   maxAttempts: number,
-  retryDelayMs: number
+  retryDelayMs: number,
+  printWarning: (message: string) => void = printWarningFallback
 ): Promise<string> {
   return new Promise((resolve, reject) => {
-    printSbtTaskImpl(resolve, reject, task, cwd, maxAttempts, maxAttempts - 1, retryDelayMs);
+    printSbtTaskImpl(resolve, reject, task, cwd, maxAttempts, maxAttempts - 1, retryDelayMs, printWarning);
   });
 }
 
@@ -20,7 +21,8 @@ function printSbtTaskImpl(
   cwd: string | undefined,
   maxAttempts: number,
   remainingAttempts: number,
-  retryDelayMs: number
+  retryDelayMs: number,
+  warn: (message: string) => void
 ): void {
   if (remainingAttempts < 0) {
     reject(`ScalaJS Vite plugin: exhausted ${maxAttempts} sbt invocation attempts without catching the cause.`);
@@ -46,7 +48,7 @@ function printSbtTaskImpl(
   });
 
   child.on('error', err => {
-    reject(new Error(`sbt invocation for Scala.js compilation could not start. Is it installed? \n${err}`));
+    reject(new Error(`sbt invocation for Scala.js compilation could not start. Is it installed?\n${err}`));
   });
   child.on('close', code => {
     if (code !== 0) {
@@ -57,10 +59,10 @@ function printSbtTaskImpl(
         reject(new Error(errorMessage));
       } else if (fullOutput.includes("sbt thinks that server is already booting")) {
         if (remainingAttempts > 0) {
-          printWarning(`Sbt server is busy (booting), retrying in ${retryDelayMs} ms...`);
+          warn(`Sbt server is busy (booting), retrying in ${retryDelayMs} ms...`);
           setTimeout(
             () => {
-              printSbtTaskImpl(resolve, reject, task, cwd, maxAttempts, remainingAttempts - 1, retryDelayMs);
+              printSbtTaskImpl(resolve, reject, task, cwd, maxAttempts, remainingAttempts - 1, retryDelayMs, warn);
             },
             retryDelayMs
           );
@@ -78,7 +80,9 @@ function printSbtTaskImpl(
   });
 }
 
-function printWarning(message: String): void {
+// By default, we use Vite's Logger, as it takes into account user's logLevel preferences etc.
+// This function is a simple fallback if calling `printSbtTask` outside of Vite context.
+function printWarningFallback(message: String): void {
   const yellow = '\x1b[33m';
   const reset = '\x1b[0m';
   console.log(`${yellow}${message}${reset}`);
@@ -108,6 +112,7 @@ export function scalaJsSbtPlugin(options: ScalaJSPluginOptions = {}): VitePlugin
   const retryDelayMs = options.retryDelayMs ?? 1000;
 
   let isDev: boolean | undefined = undefined;
+  let logger: Logger | undefined = undefined;
   let scalaJsOutputDir: string | undefined = undefined;
 
   return {
@@ -116,13 +121,15 @@ export function scalaJsSbtPlugin(options: ScalaJSPluginOptions = {}): VitePlugin
     // Vite-specific
     configResolved(resolvedConfig) {
       isDev = resolvedConfig.mode === 'development';
+      logger = resolvedConfig.logger;
     },
 
     // standard Rollup
     async buildStart(buildOptions) {
-      if (isDev === undefined) {
+      if (isDev === undefined || logger === undefined) {
         throw new Error("configResolved must be called before buildStart");
       }
+      const resolvedLogger = logger;
 
       const task = options.task?.trim() || (isDev ? "fastLinkJSOutput" : "fullLinkJSOutput");
       if (["fastLinkJS", "fullLinkJS", "fastOptJS", "fullOptJS"].includes(task)) {
@@ -136,7 +143,10 @@ export function scalaJsSbtPlugin(options: ScalaJSPluginOptions = {}): VitePlugin
         throw new Error(errorMessage);
       }
       const projectTask = projectID ? `${projectID}/${task}` : task;
-      scalaJsOutputDir = await printSbtTask(projectTask, cwd, maxAttempts, retryDelayMs);
+      scalaJsOutputDir = await printSbtTask(
+        projectTask, cwd, maxAttempts, retryDelayMs,
+        message => resolvedLogger.warn(message)
+      );
     },
 
     // standard Rollup
